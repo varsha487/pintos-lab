@@ -1,0 +1,110 @@
+			+-------------------------+
+			|        EC 440           |
+			| PROJECT 0: Getting Real |
+			|     DESIGN DOCUMENT     |
+			+-------------------------+
+				   
+---- AUTHOR ----
+
+Varsha Athreya vathreya@bu.edu
+
+---- PRELIMINARIES ----
+
+>> If you have any preliminary comments on your submission, notes for the
+>> TAs, or extra credit, please give them here.
+
+>> Please cite any offline or online sources you consulted while
+>> preparing your submission, other than the Pintos documentation, course
+>> text, lecture notes, and course staff.
+
+			     Booting Pintos
+			     ==============
+
+---- QUESTIONS ---- 
+>> Put the screenshots of Pintos running in src/p0.
+>> A1: Is there any particular issue that you would like us to know?
+
+			     Debugging
+			     =========
+
+---- QUESTIONS: BIOS ---- 
+>> B1: What is the first instruction that gets executed?
+ljmp - long jump
+>> B2: At which physical address is this instruction located?
+0xffff0
+>> B3: Can you guess why the first instruction is like this?
+ljmp stand for long jump to another location in memory for BIOS startup
+>> B4: What are the next three instructions?
+0xffff7: das
+0xffff8: xor  (%ebx),%dh
+0xffffa: das
+---- QUESTIONS: BOOTLOADER ---- 
+>> B5: How does the bootloader read disk sectors? In particular, what BIOS interrupt
+is used?
+Bootloader reads disk sectors in the read_mbr assembly code segments. Then it goes to read_sector in which we see the interrupt: int $0x13
+
+>> B6: How does the bootloader decides whether it successfully finds the Pintos kernel?
+It uses the carry flag to determine once its done iterating through the drives. Then if it didn't find the Pintos kernel, it reaches no_boot_partition.
+
+>> B7: What happens when the bootloader could not find the Pintos kernel?
+calls int $0x18 in no_boot_partition
+
+>> B8: At what point and how exactly does the bootloader transfer control to the Pintos kernel?
+it loads all the sectors by looping through them. Then, it transfers control once the kernel is loaded. The ELF header contains the start address and converts it to an offset. Then it jumps this offset. This information was listed in a comment in the loader.S file.
+
+---- QUESTIONS: KERNEL ---- 
+>> B9: At the entry of pintos_init(), what is the value of expression 
+init_page_dir[pd_no(ptov(0))] in hexadecimal format?
+=> 0xc000efcf:  int3
+=> 0xc000efcf:  int3
+$1 = 0x0
+
+>> B10: When palloc_get_page() is called for the first time,
+
+>> B10.1 what does the call stack look like?
+#0  palloc_get_page (flags=(PAL_ASSERT | PAL_ZERO)) at ../../threads/palloc.c:113
+#1  0xc00203aa in paging_init () at ../../threads/init.c:168
+#2  0xc002031b in pintos_init () at ../../threads/init.c:100
+#3  0xc002013d in start () at ../../threads/start.S:180
+
+>> B10.2 what is the return value in hexadecimal format?
+Value returned is $1 = (void *) 0xc0101000
+
+>> B10.3 what is the value of expression init_page_dir[pd_no(ptov(0))] in hexadecimal format?
+=> 0xc000ef8f:  int3
+=> 0xc000ef8f:  int3
+$2 = 0x0
+
+>> B11: When palloc_get_page() is called for the third time,
+
+>> B11.1 what does the call stack look like?
+#0  palloc_get_page (flags=PAL_ZERO) at ../../threads/palloc.c:112
+#1  0xc0020a81 in thread_create (name=0xc002e895 "idle", priority=0, function=0xc0020eb0 <idle>, aux=0xc000efbc) at ../../threads/thread.c:178
+#2  0xc0020976 in thread_start () at ../../threads/thread.c:111
+#3  0xc0020334 in pintos_init () at ../../threads/init.c:119
+#4  0xc002013d in start () at ../../threads/start.S:180
+
+>> B11.2 what is the return value in hexadecimal format?
+Value returned is $3 = (void *) 0xc0103000
+
+>> B11.3 what is the value of expression init_page_dir[pd_no(ptov(0))] in hexadecimal format?
+=> 0xc000ef4f:  int3
+=> 0xc000ef4f:  int3
+$4 = 0x102027
+			     Kernel Monitor
+			     ==============
+
+---- DATA STRUCTURES ----
+
+>> C1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+I did not change any of these. All variables added were local.
+
+
+---- ALGORITHMS ----
+>> C2: Explain how you read and write to the console for the kernel monitor.
+I saved whatever character was typed into a variable c. This was then put to the screen using putchar. I saved all the characters in a char array called input (which has a maximum length of 100). Then I used the strcmp C function for the keywords whoami and exit and used printf to print the respective outputs for the inputs. I put this all around an infinite while loop to take in typed input as many times as possible until "exit" is typed.
+
+>> C3: Any additional enhancement you implement?
+N/A

@@ -133,14 +133,45 @@ pintos_init (void)
     /* Run actions specified on kernel command line. */
     run_actions (argv);
   } else {
-    // TODO: no command line passed to kernel. Run interactively 
+    while(true){
+      printf("BUOS> ");
+      char input[100];
+      int i = 0;
+      while(true){
+        char c = input_getc();
+        
+        if( c == '\n' || c == '\r'){
+        putchar('\r');
+        putchar('\n');
+          break;
+        }
+        putchar(c);
+        input[i] = c;
+        i = i + 1;
+
+      }
+      
+      input[i] = '\0';
+      if(strcmp(input, "whoami") == 0 ){
+        printf("varsha\n");
+      }
+      else if(strcmp(input, "exit") == 0){
+        break;
+      }
+      else{
+        printf("invalid command\n");
+      }
+     }
   }
 
   /* Finish up. */
   shutdown ();
   thread_exit ();
 }
-
+
+
+
+
 /* Clear the "BSS", a segment that should be initialized to
    zeros.  It isn't actually stored on disk or zeroed by the
    kernel loader, so we have to zero it ourselves.
@@ -429,5 +460,5 @@ locate_block_device (enum block_type role, const char *name)
       printf ("%s: using %s\n", block_type_name (role), block_name (block));
       block_set_role (role, block);
     }
-}
-#endif
+  }
+#endif /* FILESYS */
