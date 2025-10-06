@@ -1,0 +1,116 @@
+			+-------------------------+
+			|        EC 440           |
+			| PROJECT 0: Getting Real |
+			|     DESIGN DOCUMENT     |
+			+-------------------------+
+				   
+---- AUTHOR ----
+
+>> Fill in your name and email address.
+
+Diana Diaz-Galliano <diana.dz@bu.edu>
+
+---- PRELIMINARIES ----
+
+>> If you have any preliminary comments on your submission, notes for the
+>> TAs, or extra credit, please give them here.
+
+>> Please cite any offline or online sources you consulted while
+>> preparing your submission, other than the Pintos documentation, course
+>> text, lecture notes, and course staff.
+
+			     Booting Pintos
+			     ==============
+
+---- QUESTIONS ---- 
+>> Put the screenshots of Pintos running in src/p0.
+>> A1: Is there any particular issue that you would like us to know?
+
+			     Debugging
+			     =========
+
+---- QUESTIONS: BIOS ---- 
+>> B1: What is the first instruction that gets executed?
+			ljmp   $0x3630,$0xf000e05b
+
+>> B2: At which physical address is this instruction located?
+			0xfff0
+
+>> B3: Can you guess why the first instruction is like this?
+			The ljmp loads the CPU and offsets to start the execution which is needed because CPUs reset in real mode and need to be repointed to the top of the 1 MB address space
+
+>> B4: What are the next three instructions?
+			1. 0xfe05b: cmpw   $0xffc8,%cs:(%esi)
+			2. 0xfe062: jne    0xd241d416
+			3. 0xfe066: xor    %edx,%edx
+
+---- QUESTIONS: BOOTLOADER ---- 
+>> B5: How does the bootloader read disk sectors? In particular, what BIOS interrupt
+is used?
+			When the bootloader runs, it uses the BIOS disk interrupt int 0x13 to pull data off the disk. This is achieved using function 0x42, which is the "extended read sectors" version. That means instead of passing the disk info directly in registers, it passes a pointer to a small structure in memory (the Disk Address Packet) that has the sector count, where to put the data, and the starting disk location.
+			
+>> B6: How does the bootloader decides whether it successfully finds the Pintos kernel?
+			The bootloader decides whether it successfully finds the Pintos kernel by checking the result of the BIOS call. After running int 0x13, the carry flags in eflags was 0 (from 0x46), which confirms the lack of errors. Furthermore, after inspecting the register through p/x $ax, the output: 0x4200 affirms the function number of the extended read sectors mentioned previously. 
+
+>> B7: What happens when the bootloader could not find the Pintos kernel?
+			If the bootloader cannot find the Pintos kernel it will print an error like "Bad read" or "Not found" using BIOS video interrupts. Then it will just implement an infinite loop so nothing else runs.
+
+>> B8: At what point and how exactly does the bootloader transfer control to the Pintos kernel?
+			The bootloader transfers control to the Pintos kernel's entry point after it finishes loading and validating the image. In my attempt, I set a breakpoint at start (in start.S) to have the execution stop there. The transfer happens though a direct jmp to the kernel's entry address. 	
+
+---- QUESTIONS: KERNEL ---- 
+>> B9: At the entry of pintos_init(), what is the value of expression 
+init_page_dir[pd_no(ptov(0))] in hexadecimal format?
+			 0xf000ff53
+
+>> B10: When palloc_get_page() is called for the first time,
+
+>> B10.1 what does the call stack look like?
+			#0  palloc_get_page (flags=(PAL_ASSERT | PAL_ZERO)) at ../../threads/palloc.c:112
+			#1  0xc00203aa in paging_init () at ../../threads/init.c:168
+			#2  0xc002031b in pintos_init () at ../../threads/init.c:100
+			#3  0xc002013d in start () at ../../threads/start.S:180
+
+>> B10.2 what is the return value in hexadecimal format?
+			0xc0101000
+
+>> B10.3 what is the value of expression init_page_dir[pd_no(ptov(0))] in hexadecimal format?
+			0xf000ff53
+
+>> B11: When palloc_get_page() is called for the third time,
+
+>> B11.1 what does the call stack look like?
+			#0  palloc_get_page (flags=PAL_ZERO) at ../../threads/palloc.c:112
+			#1  0xc0020a81 in thread_create (name=0xc002e895 "idle", priority=0, function=0xc0020eb0 <idle>, aux=0xc000efbc) at ../../threads/thread.c:178
+			#2  0xc0020976 in thread_start () at ../../threads/thread.c:111
+			#3  0xc0020334 in pintos_init () at ../../threads/init.c:119
+			#4  0xc002013d in start () at ../../threads/start.S:180
+
+>> B11.2 what is the return value in hexadecimal format?
+			0xc0103000
+
+>> B11.3 what is the value of expression init_page_dir[pd_no(ptov(0))] in hexadecimal format?
+			0x0
+
+			     Kernel Monitor
+			     ==============
+
+---- DATA STRUCTURES ----
+
+>> C1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+			I added a new static function declaration for buos_monitor. Its purpose is to launch a simple kernel-level shell that handles user commands when no arguments are passed at boot.
+
+---- ALGORITHMS ----
+>> C2: Explain how you read and write to the console for the kernel monitor.
+			For input, I used input_getc() from Pintos's devices/input.c, which retrieves one character at a time from the keyboard. Each character is echoed back to the console using putchar() so the user can see what they type. Input is stored in a buffer until a newline or carriage return is pressed, then it is parsed as a command. For output, I used printf() to display responses and prompts (BUOS>).
+
+>> C3: Any additional enhancement you implement?
+			I implemented three commands:
+
+				- whoami prints my name.
+
+				- exit leaves the monitor and allows the kernel to finish shutting down.
+
+				- Any other input prints "invalid command."
