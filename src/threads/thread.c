@@ -15,6 +15,25 @@
 #include "userprog/process.h"
 #endif
 
+/* Function prototypes for priority donation (Task 2.2) */
+void donate_priority(struct thread *t);
+void remove_lock_donations(struct lock *lock);
+void refresh_priority(struct thread *t);
+bool thread_priority_cmp(const struct list_elem *a,
+                         const struct list_elem *b,
+                         void *aux UNUSED);
+
+/* Compare two donation list elements by priority (higher first). */
+static bool
+donation_higher_priority (const struct list_elem *a,
+                          const struct list_elem *b,
+                          void *aux UNUSED)
+{
+  const struct thread *ta = list_entry (a, struct thread, donation_elem);
+  const struct thread *tb = list_entry (b, struct thread, donation_elem);
+  return ta->priority > tb->priority;
+}
+
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
    of thread.h for details. */
@@ -372,6 +391,53 @@ thread_get_priority (void)
   return thread_current ()->priority;
 }
 
+/* Donate current thread’s priority up the chain. */
+void donate_priority(struct thread *t) {
+  while (t && t->waiting_lock && t->waiting_lock->holder &&
+         t->priority < thread_current()->priority) {
+    t->priority = thread_current()->priority;
+    t = t->waiting_lock->holder;
+  }
+}
+
+/* Remove donations related to a released lock. */
+void remove_lock_donations(struct lock *lock) {
+  struct list_elem *e = list_begin(&thread_current()->donations);
+  while (e != list_end(&thread_current()->donations)) {
+    struct thread *donor = list_entry(e, struct thread, donation_elem);
+    if (donor->waiting_lock == lock)
+      e = list_remove(e);
+    else
+      e = list_next(e);
+  }
+}
+
+/* Refresh effective priority based on base + donations. */
+void refresh_priority(struct thread *t) {
+  t->priority = t->base_priority;
+
+  if (!list_empty (&t->donations))
+    {
+      /* Sort donors by priority using the donation comparator. */
+      list_sort (&t->donations, donation_higher_priority, NULL);
+
+      struct thread *top =
+        list_entry (list_front (&t->donations),
+                    struct thread, donation_elem);
+
+      if (top->priority > t->priority)
+        t->priority = top->priority;
+    }
+}
+
+/* Compare two threads by priority (for sorting). */
+bool thread_priority_cmp(const struct list_elem *a,
+                         const struct list_elem *b,
+                         void *aux UNUSED) {
+  return list_entry(a, struct thread, elem)->priority >
+         list_entry(b, struct thread, elem)->priority;
+}
+
 /* Sets the current thread's nice value to NICE. */
 void
 thread_set_nice (int nice UNUSED) 
@@ -489,6 +555,9 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->base_priority = priority;       /* Store original base priority. */
+  list_init(&t->donations);          /* Initialize the donation list. */
+  t->waiting_lock = NULL;            /* Not waiting on any lock yet. */
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();

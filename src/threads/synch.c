@@ -32,6 +32,11 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+/* Priority donation helper functions (from thread.c) */
+void donate_priority(struct thread *t);
+void remove_lock_donations(struct lock *lock);
+void refresh_priority(struct thread *t);
+
 /* --- Priority comparator for semaphore waiters --- */
 static bool
 sema_waiter_higher_priority (const struct list_elem *a,
@@ -230,8 +235,26 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  struct thread *cur = thread_current ();
+
+  if (lock->holder != NULL && !thread_mlfqs)
+    {
+      /* I'm going to wait on this lock; donate to current holder. */
+      cur->waiting_lock = lock;
+
+      /* Put me on the holder's donations list so release() can find/remove me. */
+      list_push_back (&lock->holder->donations, &cur->donation_elem);
+
+      /* Propagate donation through any chain: holder -> holder->holder -> ... */
+      donate_priority (lock->holder);
+    }
+
+  /* Sleep until the lock becomes available. */
   sema_down (&lock->semaphore);
-  lock->holder = thread_current ();
+
+  /* I got the lock; I’m no longer waiting. */
+  cur->waiting_lock = NULL;
+  lock->holder = cur;
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -265,6 +288,12 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
+  if (!thread_mlfqs)
+    {
+	  remove_lock_donations(lock);
+	  refresh_priority(thread_current());
+    }
+  
   lock->holder = NULL;
   sema_up (&lock->semaphore);
 }
