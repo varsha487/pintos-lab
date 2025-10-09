@@ -372,7 +372,9 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+  if (thread_mlfqs) return;
+	thread_current ()->base_priority = new_priority;
+	refresh_priority (thread_current());
 
   /* Yield if this thread is no longer the highest priority. */
   if (!list_empty(&ready_list))
@@ -393,23 +395,40 @@ thread_get_priority (void)
 
 /* Donate current thread’s priority up the chain. */
 void donate_priority(struct thread *t) {
-  while (t && t->waiting_lock && t->waiting_lock->holder &&
-         t->priority < thread_current()->priority) {
-    t->priority = thread_current()->priority;
-    t = t->waiting_lock->holder;
-  }
+  int newp = thread_current()->priority;
+  /* Limit depth to prevent long chains from spinning forever. */
+  for (int depth = 0; t != NULL && depth < 8; depth++)
+    {
+      if (t->priority >= newp)
+        break;
+
+      t->priority = newp;
+
+      /* If the donee is READY, keep ready_list ordering correct. */
+      if (t->status == THREAD_READY)
+        {
+          list_remove (&t->elem);
+          list_insert_ordered (&ready_list, &t->elem, compare_priority, NULL);
+        }
+
+      if (t->waiting_lock == NULL)
+        break;
+      t = t->waiting_lock->holder;
+    }
 }
 
-/* Remove donations related to a released lock. */
-void remove_lock_donations(struct lock *lock) {
-  struct list_elem *e = list_begin(&thread_current()->donations);
-  while (e != list_end(&thread_current()->donations)) {
-    struct thread *donor = list_entry(e, struct thread, donation_elem);
-    if (donor->waiting_lock == lock)
-      e = list_remove(e);
-    else
-      e = list_next(e);
-  }
+void
+remove_lock_donations (struct lock *lock)
+{
+  struct list_elem *e = list_begin (&thread_current ()->donations);
+  while (e != list_end (&thread_current ()->donations))
+    {
+      struct thread *donor = list_entry (e, struct thread, donation_elem);
+      if (donor->waiting_lock == lock)
+        e = list_remove (e);
+      else
+        e = list_next (e);
+    }
 }
 
 /* Refresh effective priority based on base + donations. */
@@ -588,15 +607,7 @@ next_thread_to_run (void)
 {
   if (list_empty (&ready_list))
     return idle_thread;
-  else
-    {
-      /* Peek at the thread that will be scheduled next. */
-      struct thread *t = list_entry (list_front (&ready_list),
-                                     struct thread, elem);
-
-           /* Pop and return the highest-priority thread. */
-      return list_entry (list_pop_front (&ready_list), struct thread, elem);
-    }
+  return list_entry (list_pop_front (&ready_list), struct thread, elem);
 }
 
 /* Completes a thread switch by activating the new thread's page
