@@ -5,6 +5,16 @@
 #include <list.h>
 #include <stdint.h>
 
+/* Fixed-point definitions used by struct thread (17.14 format) */
+typedef int fixed_t;
+#ifndef FRAC_BITS
+#define FRAC_BITS 14
+#endif
+#define F (1 << FRAC_BITS)
+
+/* Forward declaration to avoid including synch.h here */
+struct lock;
+
 /* States in a thread's life cycle. */
 enum thread_status
   {
@@ -92,6 +102,8 @@ struct thread
     struct list donations;          /* Threads that donated to this one. */
     struct lock *waiting_lock;      /* Lock this thread is waiting on (if any). */
     struct list_elem donation_elem; /* For linking this thread in another's donation list. */
+    int nice;           /* MLFQS nice value [-20,20] */
+    fixed_t recent_cpu; /* MLFQS recent_cpu in 17.14 */
 
     struct list_elem allelem;           /* List element for all threads list. */
 
