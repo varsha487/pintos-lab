@@ -11,9 +11,49 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "devices/timer.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
+
+#define FP_SHIFT 14
+#define FP_F (1 << FP_SHIFT)
+
+/* Convert integer to fixed point */
+static inline int int_to_fp(int n) { return n * FP_F; }
+
+/* Convert fixed point to integer (truncate toward 0) */
+static inline int fp_to_int_trunc(int x) { return x / FP_F; }
+
+/* Convert fixed point to integer (round to nearest) */
+static inline int fp_to_int_round(int x) {
+  if (x >= 0)
+    return (x + FP_F / 2) / FP_F;
+  else
+    return (x - FP_F / 2) / FP_F;
+}
+
+/* Add/sub two fixed-point numbers */
+static inline int fp_add(int x, int y) { return x + y; }
+static inline int fp_sub(int x, int y) { return x - y; }
+
+/* Add/sub an integer and a fixed-point number */
+static inline int fp_add_int(int x, int n) { return x + n * FP_F; }
+static inline int fp_sub_int(int x, int n) { return x - n * FP_F; }
+
+/* Multiply/divide two fixed-point numbers */
+static inline int fp_mult(int x, int y) { return ((int64_t) x) * y / FP_F; }
+static inline int fp_div(int x, int y) { return ((int64_t) x) * FP_F / y; }
+
+/* Multiply/divide a fixed-point number by an integer */
+static inline int fp_mult_int(int x, int n) { return x * n; }
+static inline int fp_div_int(int x, int n) { return x / n; }
+
+static int load_avg;
+
+static void mlfqs_update_load_avg(void);
+static void mlfqs_update_recent_cpu_all(void);
+static void mlfqs_update_priority_all(void);
 
 /* Function prototypes for priority donation (Task 2.2) */
 void donate_priority(struct thread *t);
@@ -127,6 +167,13 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+
+  if (thread_mlfqs) {
+    initial_thread->nice = int_to_fp(0);
+    initial_thread->recent_cpu = int_to_fp(0);
+    initial_thread->priority = 
+        PRI_MAX - fp_to_int_round(fp_div_int(initial_thread->recent_cpu, 4)) - (initial_thread->nice * 2);
+  }
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -163,9 +210,26 @@ thread_tick (void)
   else
     kernel_ticks++;
 
+
+  /* Update recent_cpu for current thread if mlfqs is enabled */
+  if (thread_mlfqs && t != idle_thread) { 
+    t->recent_cpu = fp_add_int(t->recent_cpu, 1);
+  }   
+  /* Every second, update load_avg and recent_cpu for all threads. */
+  if (thread_mlfqs && timer_ticks() % TIMER_FREQ == 0) {
+    mlfqs_update_load_avg();
+    mlfqs_update_recent_cpu_all();
+  }     
+  /* Every 4 ticks, update priority for all threads. */
+  if (thread_mlfqs && timer_ticks() % 4 == 0) {
+    mlfqs_update_priority_all();
+  }
+
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
     intr_yield_on_return ();
+  
+
 }
 
 /* Prints thread statistics. */
@@ -457,35 +521,79 @@ bool thread_priority_cmp(const struct list_elem *a,
          list_entry(b, struct thread, elem)->priority;
 }
 
+static void
+mlfqs_update_priority(struct thread *t, void *aux UNUSED) {
+    if (t == idle_thread)
+      return;
+
+    int new_priority = PRI_MAX - fp_to_int_round(fp_div_int(t->recent_cpu, 4))
+                       - (t->nice * 2);
+    if (new_priority > PRI_MAX)
+        new_priority = PRI_MAX;
+    if (new_priority < PRI_MIN)
+        new_priority = PRI_MIN;
+    t->priority = new_priority;
+}
+static void
+mlfqs_update_priority_all(void) {
+    thread_foreach(mlfqs_update_priority, NULL);
+    list_sort(&ready_list, compare_priority, NULL);
+}
+
 /* Sets the current thread's nice value to NICE. */
 void
 thread_set_nice (int nice UNUSED) 
 {
-  /* Not yet implemented. */
+  thread_current()->nice = nice;
+  mlfqs_update_priority(thread_current(), NULL);
+  thread_yield();
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return thread_current()->nice;
+  
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return fp_to_int_round(fp_mult_int(load_avg, 100));
+}
+static void
+mlfqs_update_load_avg(void) {
+    int ready_threads = list_size(&ready_list);
+    if (thread_current() != idle_thread)
+        ready_threads++;
+
+    load_avg = fp_add(fp_mult(fp_div(int_to_fp(59), 60), load_avg),
+                      fp_mult(fp_div(int_to_fp(1), 60), int_to_fp(ready_threads)));
+}
+
+static void
+mlfqs_update_recent_cpu(struct thread *t, void *aux UNUSED) {
+    if (t == idle_thread)
+        return;
+
+    int coef = fp_div(fp_mult_int(load_avg, 2),
+                      fp_add_int(fp_mult_int(load_avg, 2), 1));
+
+    t->recent_cpu = fp_add_int(fp_mult(coef, t->recent_cpu), t->nice);
+}
+
+static void
+mlfqs_update_recent_cpu_all(void) {
+    thread_foreach(mlfqs_update_recent_cpu, NULL);
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return fp_to_int_round(fp_mult_int(thread_current()->recent_cpu, 100));
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
