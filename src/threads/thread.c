@@ -5,7 +5,6 @@
 #include <stdio.h>
 #include <string.h>
 #include "devices/timer.h"
-#include "devices/timer.c"
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
